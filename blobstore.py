@@ -1,20 +1,32 @@
-#!/usr/bin/env python
-import web
+#!/usr/bin/python
+from flask import Flask, request
+from flask_sqlalchemy import SQLAlchemy
+import os
 
-urls = (
-    '/store/blobs', 'all_blobs',
-    '/store/(.*)', 'blob_store'
-)
+blobstore = Flask(__name__)
 
-app = web.application(urls, globals())
+basedir = os.path.abspath(os.path.dirname(__file__))
+blobstore.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'blobstore.sqlite')
+db = SQLAlchemy(blobstore)
 
-class all_blobs:
-    def GET(self):
-        return "all_blobs" + "\n"
+class Blobs(db.Model):
+    key = db.Column(db.String, primary_key=True)
+    value = db.Column(db.LargeBinary)
 
-class blob_store:
-    def GET(self, blob_location):
-        return blob_location + "\n"
+@blobstore.route("/")
+def home():
+    return "HELLO WORLD!"
+
+@blobstore.route("/store/<blob_key>", methods=["GET", "POST", "PUT", "DELETE"])
+def blob_ops(blob_key):
+    if request.method == 'POST':
+        blob_value = request.get_data()
+        blob = Blobs(key = blob_key, value = blob_value)
+        db.session.add(blob)
+        db.session.commit()
+
+    return '', 200
 
 if __name__ == "__main__":
-    app.run()
+    db.create_all()
+    blobstore.run(debug=True)
