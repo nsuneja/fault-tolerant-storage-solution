@@ -31,26 +31,36 @@ def _initializeLogger():
 def home():
     return "HELLO WORLD!"
 
-@blobstore.route("/store/<blob_key>", methods=["GET", "POST", "PUT", "DELETE"])
-def blob_ops(blob_key):
+@blobstore.route("/store/<blobKey>", methods=["GET", "POST", "PUT", "DELETE"])
+def blob_ops(blobKey):
     retCode = 200
-    retMsg = ''
+    retVal = ''
     if request.method == 'POST':
-        blob_value = request.get_data()
-        blob = Blobs(key = blob_key, value = blob_value)
+        blobValue = request.get_data()
+        blob = Blobs(key = blobKey, value = blobValue)
         try:
             db.session.add(blob)
             db.session.commit()
-            retMsg = "Successfully inserted blob={} into blobstore.\n".format(blob_key)
+            retVal = "Successfully inserted blob={} into blobstore.\n".format(blobKey)
         except Exception, e:
             logger.exception(e)
             db.session.rollback()
             # TODO: Make the error code exception specific.
             retCode = 500
-            retMsg = "Failed to insert blob={0} into blobstore. Error={1}\n". \
-		     format(blob_key, e.message)
-	  
-    return retMsg, retCode
+            retVal = "Failed to insert blob={0} into blobstore. Error={1}\n". \
+		     format(blobKey, e.message)
+    elif request.method == 'GET':
+        try:
+	    blobValue = db.session.query(Blobs.value).filter_by(key=blobKey)[0][0]
+            retVal = str(blobValue) 
+        except Exception, e:
+            logger.exception(e)
+            # TODO: Make the error code exception specific.
+            retCode = 500
+            retVal = "Failed to query blob={0} from blobstore. Error={1}\n". \
+		     format(blobKey)
+
+    return retVal, retCode
 
 if __name__ == "__main__":
     _initializeLogger()
