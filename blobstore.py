@@ -51,14 +51,55 @@ def blob_ops(blobKey):
 		     format(blobKey, e.message)
     elif request.method == 'GET':
         try:
-	    blobValue = db.session.query(Blobs.value).filter_by(key=blobKey)[0][0]
-            retVal = str(blobValue) 
+	    blobs = db.session.query(Blobs).filter_by(key=blobKey)
+            if blobs.count() == 0:
+                retCode = 404
+		retVal = "Blob={0} not found in the blobstore.\n".format(blobKey)
+            else:
+                retVal = str(blobs.first().value) 
         except Exception, e:
             logger.exception(e)
             # TODO: Make the error code exception specific.
             retCode = 500
             retVal = "Failed to query blob={0} from blobstore. Error={1}\n". \
-		     format(blobKey)
+		     format(blobKey, e.message)
+    elif request.method == 'PUT':
+        blobValue = request.get_data()
+        try:
+	    blobs = db.session.query(Blobs).filter_by(key=blobKey)
+            if blobs.count() == 0:
+                retCode = 404
+		retVal = "Blob={0} not found in the blobstore.\n".format(blobKey)
+            else:
+                blobs.first().value = blobValue
+                db.session.commit()
+                retVal = "Successfully updated blob={0} in blobstore.\n".format(blobKey)
+        except Exception, e:
+            logger.exception(e)
+            db.session.rollback()
+            # TODO: Make the error code exception specific.
+            retCode = 500
+            retVal = "Failed to update blob={0} in blobstore. Error={1}\n". \
+		     format(blobKey, e.message)
+    elif request.method == 'DELETE':
+        try:
+	    blobs = db.session.query(Blobs).filter_by(key=blobKey)
+            if blobs.count() == 0:
+                retCode = 404
+		retVal = "Blob={0} not found in the blobstore.\n".format(blobKey)
+            else:
+                db.session.delete(blobs.first())
+                db.session.commit()
+	        blobCount = db.session.query(Blobs).filter_by(key=blobKey).count()
+                retVal = "Successfully deleted blob={0} in blobstore. Current blob count={1}\n". \
+		format(blobKey, blobCount)
+        except Exception, e:
+            logger.exception(e)
+            db.session.rollback()
+            # TODO: Make the error code exception specific.
+            retCode = 500
+            retVal = "Failed to delete blob={0} from blobstore. Error={1}\n". \
+		     format(blobKey, e.message)
 
     return retVal, retCode
 
