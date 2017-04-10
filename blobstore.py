@@ -4,6 +4,10 @@ from flask_sqlalchemy import SQLAlchemy
 import sqlalchemy
 import os
 import logging
+import socket
+from time import sleep
+
+logger = None
 
 blobstore = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -17,8 +21,12 @@ class Blobs(db.Model):
 
 def _initializeLogger():
     global logger
-    logFileName = basedir + "/blobstore.log"
 
+    if logger is not None:
+        logger.warn("Logger instance is already initialized.")
+        return
+
+    logFileName = basedir + "/blobstore.log"
     # TODO: Make the log file name unique for each instance of blobstore service.
     logger = logging.getLogger("BlobStoreLogger")
     logger.setLevel(logging.DEBUG)
@@ -29,7 +37,7 @@ def _initializeLogger():
 
 @blobstore.route("/")
 def home():
-    return "HELLO WORLD!"
+    return "HELLO WORLD!\n"
 
 @blobstore.route("/store/<blobKey>", methods=["GET", "POST", "PUT", "DELETE"])
 def blob_ops(blobKey):
@@ -103,6 +111,17 @@ def blob_ops(blobKey):
 
     return retVal, retCode
 
-if __name__ == "__main__":
+def runBlobStore():
     _initializeLogger()
-    blobstore.run(debug=True)
+    try:
+        blobstore.run(debug=True)
+    except socket.error, e:
+        if e.errno == 98:
+	    logger.warn("Another instance blobstore service bound itself to the port.")
+	else:
+	    raise e
+
+if __name__ == "__main__":
+    while True:
+        runBlobStore()
+        sleep(0.1)
