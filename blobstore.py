@@ -6,6 +6,8 @@ import os
 import logging
 import socket
 from time import sleep
+import sys
+import os
 
 logger = None
 
@@ -19,15 +21,13 @@ class Blobs(db.Model):
     key = db.Column(db.String, primary_key=True)
     value = db.Column(db.LargeBinary)
 
-def _initializeLogger():
+def _writeToPIDFile(p_num):
+    with open(basedir + "/pids/pid-{0}.pid".format(p_num), "w") as fp:
+        fp.write(str(os.getpid()))
+
+def _initializeLogger(p_num):
     global logger
-
-    if logger is not None:
-        logger.warn("Logger instance is already initialized.")
-        return
-
-    logFileName = basedir + "/blobstore.log"
-    # TODO: Make the log file name unique for each instance of blobstore service.
+    logFileName = basedir + "/logs/blobstore-{0}.log".format(p_num)
     logger = logging.getLogger("BlobStoreLogger")
     logger.setLevel(logging.DEBUG)
     fileHandler = logging.FileHandler(logFileName)
@@ -112,7 +112,6 @@ def blob_ops(blobKey):
     return retVal, retCode
 
 def runBlobStore():
-    _initializeLogger()
     try:
         blobstore.run(debug=True)
     except socket.error, e:
@@ -122,6 +121,12 @@ def runBlobStore():
 	    raise e
 
 if __name__ == "__main__":
+    p_num = 0
+    if len(sys.argv) > 1:
+        p_num = int(sys.argv[1])
+
+    _writeToPIDFile(p_num)
+    _initializeLogger(p_num)
     while True:
         runBlobStore()
         sleep(0.1)
