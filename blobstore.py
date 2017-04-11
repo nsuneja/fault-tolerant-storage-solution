@@ -113,7 +113,7 @@ def blob_ops(blobKey):
 
 def runBlobStore():
     try:
-        blobstore.run(debug=True)
+        blobstore.run(host='0.0.0.0', port=7777)
     except socket.error, e:
         if e.errno == 98:
 	    logger.warn("Another instance blobstore service bound itself to the port.")
