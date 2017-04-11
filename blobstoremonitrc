@@ -1,9 +1,5 @@
-check process blobstore_inst1 with pidfile /home/nishantsuneja/fault-tolerant-storage-solution/pids/pid-1.pid
+set daemon 1
+check process blobstore_inst1 with pidfile /var/run/blobstore_pids/pid-1.pid
    group blobstore
-   start program = "/bin/bash -c '/usr/bin/python /home/nishantsuneja/fault-tolerant-storage-solution/blobstore.py 1 &'"
-   stop program = "/bin/bash -c 'kill -TERM `cat /home/nishantsuneja/fault-tolerant-storage-solution/pids/pid-1.pid`'" 
-
-check process blobstore_inst2 with pidfile /home/nishantsuneja/fault-tolerant-storage-solution/pids/pid-2.pid
-   group blobstore
-   start program = "/bin/bash -c '/usr/bin/python /home/nishantsuneja/fault-tolerant-storage-solution/blobstore.py 2 &'" 
-   stop program = "/bin/bash -c 'kill -TERM `cat /home/nishantsuneja/fault-tolerant-storage-solution/pids/pid-2.pid`'" 
+   start program = "/bin/blobstore.sh start 1"
+   stop program = "/bin/blobstore.sh stop 1" 
