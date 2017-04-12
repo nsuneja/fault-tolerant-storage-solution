@@ -29,9 +29,9 @@ def _initializeLogger(p_num):
     global logger
     logFileName = basedir + "/logs/blobstore-{0}.log".format(p_num)
     logger = logging.getLogger("BlobStoreLogger")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     fileHandler = logging.FileHandler(logFileName)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(threadName)s - %(message)s')
     fileHandler.setFormatter(formatter)
     logger.addHandler(fileHandler)
 
@@ -43,6 +43,7 @@ def home():
 def blob_ops(blobKey):
     retCode = 200
     retVal = ''
+    logger.info("REQUEST RECEIVED: type = {0}, key = {1}, value = {2}".format(request.method, blobKey, request.get_data()))
     if request.method == 'POST':
         blobValue = request.get_data()
         blob = Blobs(key = blobKey, value = blobValue)
@@ -116,7 +117,7 @@ def runBlobStore():
         blobstore.run(host='0.0.0.0', port=7777)
     except socket.error, e:
         if e.errno == 98:
-	    logger.warn("Another instance blobstore service bound itself to the port.")
+	    logger.debug("Another instance blobstore service bound itself to the port.")
 	else:
 	    raise e
 
