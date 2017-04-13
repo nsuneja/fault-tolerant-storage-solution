@@ -17,44 +17,70 @@ BLOBSTORE_URL = "http://" + BLOBSTORE_HOST + ":" + BLOBSTORE_PORT + BLOBSTORE_EN
 MAX_CONNECTION_ERR_RETRIES = 10
 PID_DIR = "/var/run/blobstore_pids/"
 
-def handleConnectionError(isGet = False):
+class MethodType:
+    GET = 0
+    POST = 1
+    PUT = 2
+    DELETE = 3
+    
+
+def handleConnectionError(methodType):
     def wrap(f):
         def newFunction(*args, **kw):
             retryCount = 0
             while True:
                 try:
                     ret = f(*args, **kw)
-                    if isGet:
+                    if methodType == MethodType.GET:
                         # Handle the special case with empty return. Retry...
                         if ret[0] == 200 and ret[1] == '':
                             raise requests.ConnectionError
                     return ret
                 except requests.ConnectionError, e:
                     print str(e)
+                    # We lost the connection to the server (perhaps because of failure injection).
+                    # Give it some time to recover.
+                    time.sleep(2)
+                    # Handle the case where the
+                    # SQL operation went through on the backend, but because of us injecting
+                    # a failure by killing the leader, client received a connection error,
+                    # and retried the operation, which failed because of the blobKey existing
+                    # in the blobstore.
+                    if methodType == MethodType.POST:
+                        response = requests.get(BLOBSTORE_URL + args[0])
+                        if response.status_code == 200:
+                            # Original request succeeded. Bail...
+                            return 200, ''
+
+                    if methodType == MethodType.DELETE:
+                        response = requests.get(BLOBSTORE_URL + args[0])
+                        if response.status_code == 404:
+                            # Original request succeeded. Bail...
+                            return 200, ''
+                    
                     retryCount += 1
                     if retryCount > MAX_CONNECTION_ERR_RETRIES:
                         raise e
                     print "RETRYING...({0}/{1})".format(retryCount, MAX_CONNECTION_ERR_RETRIES)
-                    time.sleep(0.1)
         return newFunction
     return wrap
 
-@handleConnectionError()
+@handleConnectionError(MethodType.POST)
 def post(key, value):
     response = requests.post(BLOBSTORE_URL + key, data = value)
     return response.status_code, response.text
 
-@handleConnectionError(True)
+@handleConnectionError(MethodType.GET)
 def get(key):
     response = requests.get(BLOBSTORE_URL + key)
     return response.status_code, response.text
 
-@handleConnectionError()
+@handleConnectionError(MethodType.PUT)
 def put(key, value):
     response = requests.put(BLOBSTORE_URL + key, data = value)
     return response.status_code, response.text
 
-@handleConnectionError()
+@handleConnectionError(MethodType.DELETE)
 def delete(key):
     response = requests.delete(BLOBSTORE_URL + key)
     return response.status_code, response.text
@@ -104,19 +130,24 @@ class BlobStoreTest(unittest.TestCase):
     def _dispatchLargeBlobs(self):
         for i in range(self.iterCount):
             with self.threadSyncLock:
+                blobKey = self.largeBlobKeyInitVal + self.largeBlobCounter
                 data = ''.join(choice(ascii_uppercase) for i in range(self.maxBlobSize))
                 print "Uploading blob-{0}".format(self.largeBlobCounter)
-                retCode, retVal = post(self.largeBlobKey. \
-			format(self.largeBlobKeyInitVal + self.largeBlobCounter), data)
+                retCode, retVal = post(self.largeBlobKey.format(blobKey), data)
                 self.assertEqual(retCode, 200)
                 self.largeBlobCounter += 1
             time.sleep(0.5)
 
 
-    def _deleteLargeBlobs(self):
+    def _FetchAndDeleteLargeBlobs(self):
         for i in range(self.largeBlobCounter):
-            retCode, retVal = delete(self.largeBlobKey.format(self.largeBlobKeyInitVal + i))
+            blobKey = self.largeBlobKey.format(self.largeBlobKeyInitVal + i)
+            print "Fetching and deleting blob = {0}".format(i)
+            retCode, retVal = get(blobKey)
             self.assertEqual(retCode, 200)
+            retCode, retVal = delete(blobKey)
+            self.assertEqual(retCode, 200)
+            time.sleep(0.1)
 
 
     def _injectFailure(self):
@@ -187,7 +218,7 @@ class BlobStoreTest(unittest.TestCase):
         time.sleep(5)
 
 
-    def testConcurrentWrites(self, injectFailure = False):
+    def _testConcurrentWrites(self, injectFailure = False):
         # Initialize the counter
         self._initCounter()
 
@@ -204,20 +235,51 @@ class BlobStoreTest(unittest.TestCase):
 
 
     def testConcurrentWritesWithFailures(self):
-        self.testConcurrentWrites(injectFailure = True)
+        self._testConcurrentWrites(injectFailure = True)
 
 
-    def testBulkTransfer(self, injectFailure = False):
+    def _testBulkTransfer(self, injectFailure = False):
         self._performConcurrentOps(injectFailure = injectFailure,
 				   opFunc = self._dispatchLargeBlobs)
 
         self.assertEqual(self.largeBlobCounter, self.numThreads * \
                                                 self.iterCount)
-        self._deleteLargeBlobs()
+        self._FetchAndDeleteLargeBlobs()
 
 
-    def testBulkTransferWithFailures(self):
-        self.testBulkTransfer(injectFailure = True)
+    def _testBulkTransferWithFailures(self):
+        self._testBulkTransfer(injectFailure = True)
+
+
+    def _testErrorRequests(self):
+        # Generate a larger than allowed request.
+        data = ''.join(choice(ascii_uppercase) for i in range(self.maxBlobSize + 1))
+        reqId = self._generateRandomNumber()
+        retCode, retVal = post(self.largeBlobKey.format(reqId), data)
+        self.assertEqual(retCode, 413)
+
+        # Generate a duplicate blob
+        data = ''.join(choice(ascii_uppercase) for i in range(self.maxBlobSize))
+        reqId = self._generateRandomNumber()
+        retCode, retVal = post(self.largeBlobKey.format(reqId), data)
+        self.assertEqual(retCode, 200)
+        retCode, retVal = post(self.largeBlobKey.format(reqId), data)
+        print retCode, retVal
+        self.assertEqual(retCode, 403)
+        retCode, retVal = delete(self.largeBlobKey.format(reqId))
+        self.assertEqual(retCode, 200)
+        
+        # Blob doesnt exist. 
+        reqId = self._generateRandomNumber()
+        retCode, retVal = delete(self.largeBlobKey.format(reqId))
+        self.assertEqual(retCode, 404)
+
+        retCode, retVal = get(self.largeBlobKey.format(reqId))
+        self.assertEqual(retCode, 404)
+
+        data = ''.join(choice(ascii_uppercase) for i in range(self.maxBlobSize))
+        retCode, retVal = put(self.largeBlobKey.format(reqId), data)
+        self.assertEqual(retCode, 404)
 
 
 if __name__ == '__main__':
