@@ -6,6 +6,9 @@ import os
 import time
 import traceback
 import psutil
+import random
+from random import choice
+from string import ascii_uppercase
 
 BLOBSTORE_PORT = "7777"
 BLOBSTORE_HOST = "localhost"
@@ -59,13 +62,21 @@ def delete(key):
 
 class BlobStoreTest(unittest.TestCase):
 
-    def _initConstants(self):
-        self.counterKey = "counterKey2"
+    def _init(self):
+        self.counterKey = "counterKey-{0}".format(self._generateRandomNumber())
         self.counterInitVal = 0
         self.numThreads = 10
         self.iterCount = 100
-        self.readModifyWriteLock = threading.Lock()
+        self.threadSyncLock = threading.Lock()
         self.injectFailureSignal = threading.Event()
+        self.maxBlobSize = 10 * 1024
+        self.largeBlobKey = "largeBlobKey-{0}"
+        self.largeBlobCounter = 0
+        self.largeBlobKeyInitVal = self._generateRandomNumber()
+
+
+    def _generateRandomNumber(self):
+        return long(random.choice(range(0,10000000)))
 
     
     def _initCounter(self):
@@ -80,7 +91,7 @@ class BlobStoreTest(unittest.TestCase):
 
     def _incrementCounter(self):
         for i in range(self.iterCount):
-            with self.readModifyWriteLock:
+            with self.threadSyncLock:
                 retCode, retVal = get(self.counterKey)
                 self.assertEqual(retCode, 200)
                 counter = int(retVal)
@@ -90,7 +101,27 @@ class BlobStoreTest(unittest.TestCase):
             time.sleep(0.1) 
 
 
+    def _dispatchLargeBlobs(self):
+        for i in range(self.iterCount):
+            with self.threadSyncLock:
+                data = ''.join(choice(ascii_uppercase) for i in range(self.maxBlobSize))
+                print "Uploading blob-{0}".format(self.largeBlobCounter)
+                retCode, retVal = post(self.largeBlobKey. \
+			format(self.largeBlobKeyInitVal + self.largeBlobCounter), data)
+                self.assertEqual(retCode, 200)
+                self.largeBlobCounter += 1
+            time.sleep(0.5)
+
+
+    def _deleteLargeBlobs(self):
+        for i in range(self.largeBlobCounter):
+            retCode, retVal = delete(self.largeBlobKey.format(self.largeBlobKeyInitVal + i))
+            self.assertEqual(retCode, 200)
+
+
     def _injectFailure(self):
+        # Initial delay.
+        time.sleep(5)
         while not self.injectFailureSignal.is_set():
             # Read the pid files and kill process from blobstore process
             # group which is currently listening on the server port.
@@ -110,10 +141,10 @@ class BlobStoreTest(unittest.TestCase):
                     pass
 
 
-    def _performConcurrentWrites(self, injectFailure):
+    def _performConcurrentOps(self, injectFailure, opFunc):
         threadList = []
         for threadId in range(self.numThreads):
-            threadList.append(threading.Thread(target=self._incrementCounter))
+            threadList.append(threading.Thread(target=opFunc))
 
         for thrd in threadList:
             thrd.start()
@@ -121,7 +152,6 @@ class BlobStoreTest(unittest.TestCase):
         # Inject failures, after some initial delay.
         if injectFailure:
             injectFailureThread = threading.Thread(target=self._injectFailure)
-            time.sleep(5)
             injectFailureThread.start()
 
         for thrd in threadList:
@@ -131,14 +161,9 @@ class BlobStoreTest(unittest.TestCase):
             self.injectFailureSignal.set()
             injectFailureThread.join()
 
-        # Get the final count
-        retCode, retVal = get(self.counterKey)
-        self.assertEqual(retCode, 200)
-        self.assertEqual(int(retVal), self.numThreads * self.iterCount)
-  
 
     def setUp(self):
-        self._initConstants()
+        self._init()
 
         # Start the monit daemon
         retCode = os.system("sudo /usr/bin/monit")
@@ -148,14 +173,8 @@ class BlobStoreTest(unittest.TestCase):
         retCode = os.system("sudo /usr/bin/monit -g blobstore start")
         self.assertEqual(retCode, 0)
 
-        # Initialize the counter
-        self._initCounter()
-
 
     def tearDown(self):
-
-        # Delete the counter
-        self._removeCounter()
 
         # Stop the blobstore service.
         retCode = os.system("sudo /usr/bin/monit -g blobstore stop")
@@ -168,12 +187,37 @@ class BlobStoreTest(unittest.TestCase):
         time.sleep(5)
 
 
-    def testConcurrentWrites(self):
-        self._performConcurrentWrites(injectFailure = False)
+    def testConcurrentWrites(self, injectFailure = False):
+        # Initialize the counter
+        self._initCounter()
+
+        self._performConcurrentOps(injectFailure = injectFailure,
+				   opFunc = self._incrementCounter)
+        
+        # Get the final count
+        retCode, retVal = get(self.counterKey)
+        self.assertEqual(retCode, 200)
+        self.assertEqual(int(retVal), self.numThreads * self.iterCount)
+  
+        # Delete the counter
+        self._removeCounter()
 
 
     def testConcurrentWritesWithFailures(self):
-        self._performConcurrentWrites(injectFailure = True)
+        self.testConcurrentWrites(injectFailure = True)
+
+
+    def testBulkTransfer(self, injectFailure = False):
+        self._performConcurrentOps(injectFailure = injectFailure,
+				   opFunc = self._dispatchLargeBlobs)
+
+        self.assertEqual(self.largeBlobCounter, self.numThreads * \
+                                                self.iterCount)
+        self._deleteLargeBlobs()
+
+
+    def testBulkTransferWithFailures(self):
+        self.testBulkTransfer(injectFailure = True)
 
 
 if __name__ == '__main__':
