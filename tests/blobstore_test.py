@@ -124,6 +124,7 @@ class BlobStoreTest(unittest.TestCase):
                 counter += 1
                 retCode, retVal = put(self.counterKey, str(counter))
                 self.assertEqual(retCode, 200)
+                print "Incremented the counter to {0}".format(counter)
             time.sleep(0.1) 
 
 
@@ -165,7 +166,7 @@ class BlobStoreTest(unittest.TestCase):
                     for conn in p.connections():
                         if conn.laddr[1] == int(BLOBSTORE_PORT):
                             # Found the leader. Kill it.
-                            print "Leader is {0}. Killing it...".format(pid)
+                            print "Blobstore leader is process = {0}. Killing it...".format(pid)
                             p.terminate()
                             time.sleep(3)
                 except psutil.NoSuchProcess, e:
@@ -197,28 +198,28 @@ class BlobStoreTest(unittest.TestCase):
         self._init()
 
         # Start the monit daemon
-        retCode = os.system("sudo /usr/bin/monit")
+        retCode = os.system("/usr/bin/monit")
         self.assertEqual(retCode, 0)
  
         # Start the blobstore service.
-        retCode = os.system("sudo /usr/bin/monit -g blobstore start")
+        retCode = os.system("/usr/bin/monit -g blobstore start")
         self.assertEqual(retCode, 0)
 
 
     def tearDown(self):
 
         # Stop the blobstore service.
-        retCode = os.system("sudo /usr/bin/monit -g blobstore stop")
+        retCode = os.system("/usr/bin/monit -g blobstore stop")
         self.assertEqual(retCode, 0)
         # Stop monit daemon.
-        retCode = os.system("sudo /usr/bin/monit quit")
+        retCode = os.system("/usr/bin/monit quit")
         self.assertEqual(retCode, 0)
 
         # Wait for some time before executing the next test.
         time.sleep(5)
 
 
-    def _testConcurrentWrites(self, injectFailure = False):
+    def testConcurrentWrites(self, injectFailure = False):
         # Initialize the counter
         self._initCounter()
 
@@ -235,10 +236,10 @@ class BlobStoreTest(unittest.TestCase):
 
 
     def testConcurrentWritesWithFailures(self):
-        self._testConcurrentWrites(injectFailure = True)
+        self.testConcurrentWrites(injectFailure = True)
 
 
-    def _testBulkTransfer(self, injectFailure = False):
+    def testBulkTransfer(self, injectFailure = False):
         self._performConcurrentOps(injectFailure = injectFailure,
 				   opFunc = self._dispatchLargeBlobs)
 
@@ -247,11 +248,11 @@ class BlobStoreTest(unittest.TestCase):
         self._FetchAndDeleteLargeBlobs()
 
 
-    def _testBulkTransferWithFailures(self):
-        self._testBulkTransfer(injectFailure = True)
+    def testBulkTransferWithFailures(self):
+        self.testBulkTransfer(injectFailure = True)
 
 
-    def _testErrorRequests(self):
+    def testErrorRequests(self):
         # Generate a larger than allowed request.
         data = ''.join(choice(ascii_uppercase) for i in range(self.maxBlobSize + 1))
         reqId = self._generateRandomNumber()
