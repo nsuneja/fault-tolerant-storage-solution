@@ -1,3 +1,4 @@
+#!/bin/bash
 BLOBSTORE_DIR=$HOME/fault-tolerant-storage-solution
 MONITRC_DIR=/etc/monit/
 
@@ -6,6 +7,13 @@ USER=$(whoami)
 if [ $USER != "root" ]; then
     echo "This script needs to be run as root user."
     exit 1
+fi
+
+# Check if python interpreter is available
+python --version
+if [ $? -ne 0 ]; then
+    echo "Install python >= 2.7"
+    exit 2
 fi
 
 # Install all the required packages.

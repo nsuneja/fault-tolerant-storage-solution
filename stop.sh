@@ -1,3 +1,4 @@
+#!/bin/bash
 # Check the user
 USER=$(whoami)
 if [ $USER != "root" ]; then
