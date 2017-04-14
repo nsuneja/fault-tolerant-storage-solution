@@ -3,6 +3,23 @@ DESCRIPTION:
 This service provides a fault tolerant single node key value store, with
 a REST base interface for performing CRUD operations on the blobstore.
 
+The solution instantiates a group of processes, one out of which binds to
+the port 7777, and opens up the blobstore for business. Also, this process
+group is instantiated under monit's umbrella to ensure that a process which
+dies, gets reborn.
+
+So, when a process dies, 2 things happen:
+
+1) One of the other processes in the process group binds itself to the port
+and keeps the blobstore available. This is an analogy of a distributed file
+system, where we elect a new leader (using some leader election receipe)
+when the old leader dies.
+
+2) Monit restarts the process in its process group which died, and that process
+now starts polling for the ownership of port 7777.
+
+
+================================================================
 
 REQUIREMENTS:
 
@@ -14,17 +31,35 @@ REQUIREMENTS:
 6) requests (Python REST client library - TESTING ONLY)
 7) psutil (Python utility to manage processes - TESTING ONLY) 
 
+=================================================================
+
 INSTALL:
 
-1) Execute configure.sh (It can be executed from ay directory)
+1) cd $HOME/fault-tolerant-storage-solution
+2) ./configure.sh
+
+==================================================================
 
 START:
 
-1) Execute run.sh. (It can be executed from any directory)
+1) cd $HOME/fault-tolerant-storage-solution
+2) ./run.sh
+
+==================================================================
 
 STOP:
 
-1) Execute stop.sh. (It can be executed from any directory)
+1) cd $HOME/fault-tolerant-storage-solution
+2) ./stop.sh
+
+===================================================================
+
+TEST:
+
+1) cd $HOME/fault-tolerant-storage-solution
+2) ./tests/blobstore_test.py
+
+====================================================================
 
 NOTE:
 
